@@ -1,4 +1,5 @@
 # Document RAG
+<img width="1269" height="598" alt="Screenshot 2026-08-23 at 6 22 08 pm" src="https://github.com/user-attachments/assets/ebc53385-5a32-4adc-9d30-209963bf7236" />
 
 This is a local Streamlit RAG application. It accepts up to five documents,
 stores their chunks and embeddings in persistent Chroma, and answers questions

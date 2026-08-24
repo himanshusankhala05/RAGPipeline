@@ -81,6 +81,21 @@ When a user clicks `Index documents`, `main.py` performs the following steps:
 
 The original uploaded files are not permanently stored by the application. Their chunks, embeddings, and metadata remain in Chroma.
 
+### Chunking Strategies
+
+The sidebar lets the user choose one of these strategies before indexing:
+
+- Recursive character: recursively splits using natural separators.
+- Character: splits using the configured separator and character length.
+- Token: splits by token count using `tiktoken`.
+- Markdown header: keeps Markdown header structure in the resulting chunks.
+- Python code: splits source code using Python-aware separators.
+- Semantic: splits when the meaning changes, using the local embedding model.
+
+Chunk size and overlap apply to the character, recursive character, token, and
+Python code strategies. Markdown header and semantic splitting use their own
+boundaries; the sidebar displays a note for semantic mode.
+
 ## 5. Supported File Types
 
 The current implementation supports:
@@ -298,6 +313,8 @@ Live embedding and provider API tests require network access and valid API crede
 - Scanned PDFs and images require OCR.
 - Existing Chroma records created before document-hash metadata may need cleanup.
 - The application depends on provider model IDs remaining active.
+- Semantic chunking currently depends on `langchain-experimental`, which emits a
+    sunset warning and should be monitored for a maintained replacement.
 - API failures could be handled with more specific provider exception messages.
 - Document updates currently require deleting and re-indexing the document.
 

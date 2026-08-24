@@ -40,6 +40,10 @@ Chunk size and chunk overlap can be configured from the Chunking section in the
 Streamlit sidebar before indexing documents. The overlap must be smaller than
 the chunk size.
 
+The sidebar also supports Recursive character, Character, Token, Markdown
+header, Python code, and Semantic chunking strategies. Semantic chunking uses
+the local embedding model to split text by meaning.
+
 ## Supported files
 
 TXT, Markdown, CSV, JSON, HTML, XML, Python, PDF, DOCX, and XLSX files are

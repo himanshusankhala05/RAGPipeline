@@ -12,7 +12,7 @@ from app.config import (
 	MAX_DOCUMENTS,
 	XAI_MODEL_NAME,
 )
-from app.loaders import load_documents
+from app.loaders import CHUNKING_STRATEGIES, load_documents
 from app.rag_chain import ask_question, retrieve_context
 from app.vector_store import (
 	add_documents,
@@ -67,6 +67,7 @@ def index_uploaded_files(
 	uploaded_files,
 	chunk_size: int = CHUNK_SIZE,
 	chunk_overlap: int = CHUNK_OVERLAP,
+	chunking_strategy: str = "recursive_character",
 ) -> int:
 	"""Extract, chunk, and store uploaded files in Chroma."""
 	temporary_paths = save_uploaded_files(uploaded_files)
@@ -75,6 +76,7 @@ def index_uploaded_files(
 			temporary_paths,
 			chunk_size=chunk_size,
 			chunk_overlap=chunk_overlap,
+			chunking_strategy=chunking_strategy,
 		)
 		# Restore the original upload names in Chroma metadata.
 		temporary_name_to_original_name = {
@@ -121,7 +123,11 @@ def find_duplicate_uploads(uploaded_files) -> list[str]:
 	return duplicates
 
 
-def render_upload_section(chunk_size: int, chunk_overlap: int) -> None:
+def render_upload_section(
+	chunk_size: int,
+	chunk_overlap: int,
+	chunking_strategy: str,
+) -> None:
 	st.header("1. Add documents")
 	uploaded_files = st.file_uploader(
 		"Choose up to five documents",
@@ -151,6 +157,7 @@ def render_upload_section(chunk_size: int, chunk_overlap: int) -> None:
 					uploaded_files,
 					chunk_size=chunk_size,
 					chunk_overlap=chunk_overlap,
+					chunking_strategy=chunking_strategy,
 				)
 			st.success(f"Added {chunk_count} chunks to Chroma.")
 		except (OSError, ValueError) as error:
@@ -194,8 +201,13 @@ def render_model_section() -> tuple[str, str]:
 	return provider, model_name
 
 
-def render_chunking_section() -> tuple[int, int]:
+def render_chunking_section() -> tuple[int, int, str]:
 	st.sidebar.header("Chunking")
+	strategy_label = st.sidebar.selectbox(
+		"Chunking strategy",
+		list(CHUNKING_STRATEGIES),
+		help="Choose how document text is divided before indexing.",
+	)
 	chunk_size = st.sidebar.number_input(
 		"Chunk size",
 		min_value=100,
@@ -214,7 +226,13 @@ def render_chunking_section() -> tuple[int, int]:
 	)
 	if chunk_overlap >= chunk_size:
 		st.sidebar.error("Chunk overlap must be smaller than chunk size.")
-	return int(chunk_size), int(chunk_overlap)
+	if strategy_label == "Semantic":
+		st.sidebar.info("Semantic chunking uses meaning instead of chunk size.")
+	return (
+		int(chunk_size),
+		int(chunk_overlap),
+		CHUNKING_STRATEGIES[strategy_label],
+	)
 
 
 def render_question_section(provider: str, model_name: str) -> None:
@@ -257,9 +275,9 @@ def main() -> None:
 	st.title("Document Question Answering")
 	st.write("Upload documents, index them, and ask questions about their content.")
 	provider, model_name = render_model_section()
-	chunk_size, chunk_overlap = render_chunking_section()
+	chunk_size, chunk_overlap, chunking_strategy = render_chunking_section()
 
-	render_upload_section(chunk_size, chunk_overlap)
+	render_upload_section(chunk_size, chunk_overlap, chunking_strategy)
 	render_indexed_documents()
 	st.divider()
 	render_question_section(provider, model_name)

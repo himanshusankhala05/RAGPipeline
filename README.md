@@ -36,6 +36,10 @@ PYTHONPATH=. uv run streamlit run app/main.py
 The application opens at `http://localhost:8501`. Indexed chunks are stored in
 `chroma_db/`, which is intentionally ignored by Git.
 
+Chunk size and chunk overlap can be configured from the Chunking section in the
+Streamlit sidebar before indexing documents. The overlap must be smaller than
+the chunk size.
+
 ## Supported files
 
 TXT, Markdown, CSV, JSON, HTML, XML, Python, PDF, DOCX, and XLSX files are

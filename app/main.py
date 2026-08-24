@@ -63,14 +63,18 @@ def save_uploaded_files(uploaded_files) -> list[Path]:
 	return temporary_paths
 
 
-def index_uploaded_files(uploaded_files) -> int:
+def index_uploaded_files(
+	uploaded_files,
+	chunk_size: int = CHUNK_SIZE,
+	chunk_overlap: int = CHUNK_OVERLAP,
+) -> int:
 	"""Extract, chunk, and store uploaded files in Chroma."""
 	temporary_paths = save_uploaded_files(uploaded_files)
 	try:
 		chunks, metadatas, ids = load_documents(
 			temporary_paths,
-			chunk_size=CHUNK_SIZE,
-			chunk_overlap=CHUNK_OVERLAP,
+			chunk_size=chunk_size,
+			chunk_overlap=chunk_overlap,
 		)
 		# Restore the original upload names in Chroma metadata.
 		temporary_name_to_original_name = {
@@ -117,7 +121,7 @@ def find_duplicate_uploads(uploaded_files) -> list[str]:
 	return duplicates
 
 
-def render_upload_section() -> None:
+def render_upload_section(chunk_size: int, chunk_overlap: int) -> None:
 	st.header("1. Add documents")
 	uploaded_files = st.file_uploader(
 		"Choose up to five documents",
@@ -127,6 +131,9 @@ def render_upload_section() -> None:
 
 	if len(uploaded_files) > MAX_DOCUMENTS:
 		st.error(f"Please select no more than {MAX_DOCUMENTS} files.")
+		return
+	if chunk_overlap >= chunk_size:
+		st.error("Chunk overlap must be smaller than chunk size.")
 		return
 
 	if st.button("Index documents", disabled=not uploaded_files):
@@ -140,7 +147,11 @@ def render_upload_section() -> None:
 				return
 
 			with st.spinner("Reading and indexing documents..."):
-				chunk_count = index_uploaded_files(uploaded_files)
+				chunk_count = index_uploaded_files(
+					uploaded_files,
+					chunk_size=chunk_size,
+					chunk_overlap=chunk_overlap,
+				)
 			st.success(f"Added {chunk_count} chunks to Chroma.")
 		except (OSError, ValueError) as error:
 			st.error(str(error))
@@ -183,6 +194,29 @@ def render_model_section() -> tuple[str, str]:
 	return provider, model_name
 
 
+def render_chunking_section() -> tuple[int, int]:
+	st.sidebar.header("Chunking")
+	chunk_size = st.sidebar.number_input(
+		"Chunk size",
+		min_value=100,
+		max_value=10000,
+		value=CHUNK_SIZE,
+		step=100,
+		help="Approximate number of characters in each chunk.",
+	)
+	chunk_overlap = st.sidebar.number_input(
+		"Chunk overlap",
+		min_value=0,
+		max_value=5000,
+		value=CHUNK_OVERLAP,
+		step=50,
+		help="Characters shared between neighboring chunks.",
+	)
+	if chunk_overlap >= chunk_size:
+		st.sidebar.error("Chunk overlap must be smaller than chunk size.")
+	return int(chunk_size), int(chunk_overlap)
+
+
 def render_question_section(provider: str, model_name: str) -> None:
 	st.header("2. Ask a question")
 	st.caption(f"Stored chunks: {document_count()}")
@@ -223,8 +257,9 @@ def main() -> None:
 	st.title("Document Question Answering")
 	st.write("Upload documents, index them, and ask questions about their content.")
 	provider, model_name = render_model_section()
+	chunk_size, chunk_overlap = render_chunking_section()
 
-	render_upload_section()
+	render_upload_section(chunk_size, chunk_overlap)
 	render_indexed_documents()
 	st.divider()
 	render_question_section(provider, model_name)

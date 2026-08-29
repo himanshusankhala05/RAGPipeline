@@ -309,13 +309,15 @@ Live embedding and provider API tests require network access and valid API crede
 ## 15. Known Limitations
 
 - Local Chroma storage is single-user and is not suitable for shared public deployment without isolation.
-- File count is limited to five, but a file-size limit is not currently enforced.
+- File count is limited to five and each uploaded file is limited to 50 MB.
 - Scanned PDFs and images require OCR.
 - Existing Chroma records created before document-hash metadata may need cleanup.
 - The application depends on provider model IDs remaining active.
 - Semantic chunking currently depends on `langchain-experimental`, which emits a
     sunset warning and should be monitored for a maintained replacement.
 - API failures could be handled with more specific provider exception messages.
+- Streamlit displays safe user-facing alerts for indexing, removal, and question
+    failures without exposing raw provider or file error details.
 - Document updates currently require deleting and re-indexing the document.
 
 ## 16. Recommended Future Improvements

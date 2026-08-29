@@ -10,6 +10,7 @@ from app.config import (
 	GROQ_MODEL_NAME,
 	LLM_PROVIDER,
 	MAX_DOCUMENTS,
+	MAX_UPLOAD_SIZE_MB,
 	XAI_MODEL_NAME,
 )
 from app.loaders import CHUNKING_STRATEGIES, load_documents
@@ -44,6 +45,27 @@ MODEL_OPTIONS = {
 		"qwen/qwen3.6-27b",
 	],
 }
+
+
+def show_user_error(operation: str, error: Exception) -> None:
+	"""Show a useful alert without exposing provider or file internals."""
+	status_code = getattr(error, "status_code", None)
+	error_name = type(error).__name__
+
+	if isinstance(error, ValueError):
+		message = str(error)
+	elif status_code == 401:
+		message = "The API key is invalid or missing. Check your .env file."
+	elif status_code == 429:
+		message = "The provider rate limit was reached. Please try again later."
+	elif isinstance(error, (ConnectionError, TimeoutError)):
+		message = "The provider could not be reached. Check your internet connection."
+	else:
+		message = f"{operation} failed. Please try again."
+
+	st.error(message)
+	with st.expander("Technical details"):
+		st.caption(f"Error type: {error_name}")
 
 
 def save_uploaded_files(uploaded_files) -> list[Path]:
@@ -138,6 +160,17 @@ def render_upload_section(
 	if len(uploaded_files) > MAX_DOCUMENTS:
 		st.error(f"Please select no more than {MAX_DOCUMENTS} files.")
 		return
+	oversized_files = [
+		uploaded_file.name
+		for uploaded_file in uploaded_files
+		if uploaded_file.size > MAX_UPLOAD_SIZE_MB * 1024 * 1024
+	]
+	if oversized_files:
+		st.error(
+			f"Each file must be {MAX_UPLOAD_SIZE_MB} MB or smaller: "
+			+ ", ".join(oversized_files)
+		)
+		return
 	if chunk_overlap >= chunk_size:
 		st.error("Chunk overlap must be smaller than chunk size.")
 		return
@@ -160,8 +193,8 @@ def render_upload_section(
 					chunking_strategy=chunking_strategy,
 				)
 			st.success(f"Added {chunk_count} chunks to Chroma.")
-		except (OSError, ValueError) as error:
-			st.error(str(error))
+		except Exception as error:
+			show_user_error("Document indexing", error)
 
 
 def render_indexed_documents() -> None:
@@ -177,8 +210,13 @@ def render_indexed_documents() -> None:
 			column_name, column_action = st.columns([4, 1])
 			column_name.write(source)
 			if column_action.button("Remove", key=f"remove-{source}"):
-				delete_documents_by_source(source)
-				st.rerun()
+				try:
+					delete_documents_by_source(source)
+				except Exception as error:
+					show_user_error("Document removal", error)
+				else:
+					st.success(f"Removed {source}.")
+					st.rerun()
 
 
 def render_model_section() -> tuple[str, str]:
@@ -266,8 +304,8 @@ def render_question_section(provider: str, model_name: str) -> None:
 				)
 				for source in sources:
 					st.write(source)
-		except (RuntimeError, ValueError, ConnectionError) as error:
-			st.error(str(error))
+		except Exception as error:
+			show_user_error("Question answering", error)
 
 
 def main() -> None:

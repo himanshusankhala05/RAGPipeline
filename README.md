@@ -44,6 +44,8 @@ The sidebar also supports Recursive character, Character, Token, Markdown
 header, Python code, and Semantic chunking strategies. Semantic chunking uses
 the local embedding model to split text by meaning.
 
+Each uploaded file must be 50 MB or smaller.
+
 ## Supported files
 
 TXT, Markdown, CSV, JSON, HTML, XML, Python, PDF, DOCX, and XLSX files are
@@ -54,3 +56,7 @@ supported. Scanned PDFs and images require OCR and are not currently supported.
 `loaders.py` extracts and chunks files. `vector_store.py` persists and searches
 embeddings. `rag_chain.py` builds grounded prompts and calls the selected
 provider. `main.py` provides the Streamlit interface.
+
+Indexing, document removal, and question-answering failures are shown as safe
+alerts in the web interface. Detailed exception text is not displayed to avoid
+leaking provider or document information.

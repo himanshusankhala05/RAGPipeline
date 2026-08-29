@@ -10,9 +10,10 @@ from app.config import (
 	GROQ_MODEL_NAME,
 	LLM_PROVIDER,
 	MAX_DOCUMENTS,
+	MAX_UPLOAD_SIZE_MB,
 	XAI_MODEL_NAME,
 )
-from app.loaders import load_documents
+from app.loaders import CHUNKING_STRATEGIES, load_documents
 from app.rag_chain import ask_question, retrieve_context
 from app.vector_store import (
 	add_documents,
@@ -46,6 +47,27 @@ MODEL_OPTIONS = {
 }
 
 
+def show_user_error(operation: str, error: Exception) -> None:
+	"""Show a useful alert without exposing provider or file internals."""
+	status_code = getattr(error, "status_code", None)
+	error_name = type(error).__name__
+
+	if isinstance(error, ValueError):
+		message = str(error)
+	elif status_code == 401:
+		message = "The API key is invalid or missing. Check your .env file."
+	elif status_code == 429:
+		message = "The provider rate limit was reached. Please try again later."
+	elif isinstance(error, (ConnectionError, TimeoutError)):
+		message = "The provider could not be reached. Check your internet connection."
+	else:
+		message = f"{operation} failed. Please try again."
+
+	st.error(message)
+	with st.expander("Technical details"):
+		st.caption(f"Error type: {error_name}")
+
+
 def save_uploaded_files(uploaded_files) -> list[Path]:
 	"""Save Streamlit uploads temporarily so the loader can read them."""
 	temporary_paths: list[Path] = []
@@ -63,14 +85,20 @@ def save_uploaded_files(uploaded_files) -> list[Path]:
 	return temporary_paths
 
 
-def index_uploaded_files(uploaded_files) -> int:
+def index_uploaded_files(
+	uploaded_files,
+	chunk_size: int = CHUNK_SIZE,
+	chunk_overlap: int = CHUNK_OVERLAP,
+	chunking_strategy: str = "recursive_character",
+) -> int:
 	"""Extract, chunk, and store uploaded files in Chroma."""
 	temporary_paths = save_uploaded_files(uploaded_files)
 	try:
 		chunks, metadatas, ids = load_documents(
 			temporary_paths,
-			chunk_size=CHUNK_SIZE,
-			chunk_overlap=CHUNK_OVERLAP,
+			chunk_size=chunk_size,
+			chunk_overlap=chunk_overlap,
+			chunking_strategy=chunking_strategy,
 		)
 		# Restore the original upload names in Chroma metadata.
 		temporary_name_to_original_name = {
@@ -117,7 +145,11 @@ def find_duplicate_uploads(uploaded_files) -> list[str]:
 	return duplicates
 
 
-def render_upload_section() -> None:
+def render_upload_section(
+	chunk_size: int,
+	chunk_overlap: int,
+	chunking_strategy: str,
+) -> None:
 	st.header("1. Add documents")
 	uploaded_files = st.file_uploader(
 		"Choose up to five documents",
@@ -127,6 +159,20 @@ def render_upload_section() -> None:
 
 	if len(uploaded_files) > MAX_DOCUMENTS:
 		st.error(f"Please select no more than {MAX_DOCUMENTS} files.")
+		return
+	oversized_files = [
+		uploaded_file.name
+		for uploaded_file in uploaded_files
+		if uploaded_file.size > MAX_UPLOAD_SIZE_MB * 1024 * 1024
+	]
+	if oversized_files:
+		st.error(
+			f"Each file must be {MAX_UPLOAD_SIZE_MB} MB or smaller: "
+			+ ", ".join(oversized_files)
+		)
+		return
+	if chunk_overlap >= chunk_size:
+		st.error("Chunk overlap must be smaller than chunk size.")
 		return
 
 	if st.button("Index documents", disabled=not uploaded_files):
@@ -140,10 +186,15 @@ def render_upload_section() -> None:
 				return
 
 			with st.spinner("Reading and indexing documents..."):
-				chunk_count = index_uploaded_files(uploaded_files)
+				chunk_count = index_uploaded_files(
+					uploaded_files,
+					chunk_size=chunk_size,
+					chunk_overlap=chunk_overlap,
+					chunking_strategy=chunking_strategy,
+				)
 			st.success(f"Added {chunk_count} chunks to Chroma.")
-		except (OSError, ValueError) as error:
-			st.error(str(error))
+		except Exception as error:
+			show_user_error("Document indexing", error)
 
 
 def render_indexed_documents() -> None:
@@ -159,8 +210,13 @@ def render_indexed_documents() -> None:
 			column_name, column_action = st.columns([4, 1])
 			column_name.write(source)
 			if column_action.button("Remove", key=f"remove-{source}"):
-				delete_documents_by_source(source)
-				st.rerun()
+				try:
+					delete_documents_by_source(source)
+				except Exception as error:
+					show_user_error("Document removal", error)
+				else:
+					st.success(f"Removed {source}.")
+					st.rerun()
 
 
 def render_model_section() -> tuple[str, str]:
@@ -181,6 +237,40 @@ def render_model_section() -> tuple[str, str]:
 		MODEL_OPTIONS[provider],
 	)
 	return provider, model_name
+
+
+def render_chunking_section() -> tuple[int, int, str]:
+	st.sidebar.header("Chunking")
+	strategy_label = st.sidebar.selectbox(
+		"Chunking strategy",
+		list(CHUNKING_STRATEGIES),
+		help="Choose how document text is divided before indexing.",
+	)
+	chunk_size = st.sidebar.number_input(
+		"Chunk size",
+		min_value=100,
+		max_value=10000,
+		value=CHUNK_SIZE,
+		step=100,
+		help="Approximate number of characters in each chunk.",
+	)
+	chunk_overlap = st.sidebar.number_input(
+		"Chunk overlap",
+		min_value=0,
+		max_value=5000,
+		value=CHUNK_OVERLAP,
+		step=50,
+		help="Characters shared between neighboring chunks.",
+	)
+	if chunk_overlap >= chunk_size:
+		st.sidebar.error("Chunk overlap must be smaller than chunk size.")
+	if strategy_label == "Semantic":
+		st.sidebar.info("Semantic chunking uses meaning instead of chunk size.")
+	return (
+		int(chunk_size),
+		int(chunk_overlap),
+		CHUNKING_STRATEGIES[strategy_label],
+	)
 
 
 def render_question_section(provider: str, model_name: str) -> None:
@@ -214,8 +304,8 @@ def render_question_section(provider: str, model_name: str) -> None:
 				)
 				for source in sources:
 					st.write(source)
-		except (RuntimeError, ValueError, ConnectionError) as error:
-			st.error(str(error))
+		except Exception as error:
+			show_user_error("Question answering", error)
 
 
 def main() -> None:
@@ -223,8 +313,9 @@ def main() -> None:
 	st.title("Document Question Answering")
 	st.write("Upload documents, index them, and ask questions about their content.")
 	provider, model_name = render_model_section()
+	chunk_size, chunk_overlap, chunking_strategy = render_chunking_section()
 
-	render_upload_section()
+	render_upload_section(chunk_size, chunk_overlap, chunking_strategy)
 	render_indexed_documents()
 	st.divider()
 	render_question_section(provider, model_name)

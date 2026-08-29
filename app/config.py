@@ -21,6 +21,7 @@ EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 
 # Document processing settings.
 MAX_DOCUMENTS = 5
+MAX_UPLOAD_SIZE_MB = 50
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 150
 

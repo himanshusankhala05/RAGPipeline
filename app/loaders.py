@@ -5,7 +5,14 @@ from pathlib import Path
 from typing import Any
 
 from docx import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import (
+	CharacterTextSplitter,
+	MarkdownHeaderTextSplitter,
+	PythonCodeTextSplitter,
+	RecursiveCharacterTextSplitter,
+	TextSplitter,
+	TokenTextSplitter,
+)
 from openpyxl import load_workbook
 from pypdf import PdfReader
 
@@ -18,6 +25,15 @@ SUPPORTED_TEXT_EXTENSIONS = {
 	".py",
 	".txt",
 	".xml",
+}
+
+CHUNKING_STRATEGIES = {
+	"Recursive character": "recursive_character",
+	"Character": "character",
+	"Token": "token",
+	"Markdown header": "markdown_header",
+	"Python code": "python_code",
+	"Semantic": "semantic",
 }
 
 
@@ -91,16 +107,81 @@ def extract_text(file_path: str | Path) -> str:
 	return text
 
 
+def _create_splitter(
+	strategy: str,
+	chunk_size: int,
+	chunk_overlap: int,
+) -> TextSplitter:
+	if strategy == "recursive_character":
+		return RecursiveCharacterTextSplitter(
+			chunk_size=chunk_size,
+			chunk_overlap=chunk_overlap,
+		)
+
+	if strategy == "character":
+		return CharacterTextSplitter(
+			separator="\n\n",
+			chunk_size=chunk_size,
+			chunk_overlap=chunk_overlap,
+		)
+
+	if strategy == "token":
+		return TokenTextSplitter(
+			chunk_size=chunk_size,
+			chunk_overlap=chunk_overlap,
+		)
+
+	if strategy == "python_code":
+		return PythonCodeTextSplitter(
+			chunk_size=chunk_size,
+			chunk_overlap=chunk_overlap,
+		)
+
+	if strategy == "markdown_header":
+		return MarkdownHeaderTextSplitter(
+			headers_to_split_on=[
+				("#", "Header 1"),
+				("##", "Header 2"),
+				("###", "Header 3"),
+			],
+			strip_headers=False,
+		)
+
+	if strategy == "semantic":
+		from langchain_experimental.text_splitter import SemanticChunker
+		from langchain_huggingface import HuggingFaceEmbeddings
+
+		embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+		return SemanticChunker(embeddings)
+
+	raise ValueError(
+		f"Unknown chunking strategy '{strategy}'. "
+		f"Choose one of: {', '.join(CHUNKING_STRATEGIES.values())}"
+	)
+
+
+def _split_document(
+	text: str,
+	strategy: str,
+	chunk_size: int,
+	chunk_overlap: int,
+) -> list[str]:
+	splitter = _create_splitter(strategy, chunk_size, chunk_overlap)
+
+	if strategy == "markdown_header":
+		documents = splitter.split_text(text)
+		return [document.page_content for document in documents]
+
+	return splitter.split_text(text)
+
+
 def load_documents(
 	file_paths: list[str | Path],
 	chunk_size: int = 1000,
 	chunk_overlap: int = 150,
+	chunking_strategy: str = "recursive_character",
 ) -> tuple[list[str], list[dict[str, Any]], list[str]]:
 	"""Read files and return chunks, metadata, and stable Chroma IDs."""
-	splitter = RecursiveCharacterTextSplitter(
-		chunk_size=chunk_size,
-		chunk_overlap=chunk_overlap,
-	)
 	chunks: list[str] = []
 	metadatas: list[dict[str, Any]] = []
 	ids: list[str] = []
@@ -108,7 +189,12 @@ def load_documents(
 	for file_path in file_paths:
 		path = Path(file_path)
 		text = extract_text(path)
-		document_chunks = splitter.split_text(text)
+		document_chunks = _split_document(
+			text,
+			chunking_strategy,
+			chunk_size,
+			chunk_overlap,
+		)
 		document_hash = hashlib.sha256(path.read_bytes()).hexdigest()
 		source_id = document_hash[:12]
 
@@ -120,6 +206,7 @@ def load_documents(
 					"file_type": path.suffix.lower(),
 					"document_hash": document_hash,
 					"chunk_index": chunk_index,
+					"chunking_strategy": chunking_strategy,
 				}
 			)
 			ids.append(f"{source_id}-{chunk_index}")

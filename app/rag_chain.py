@@ -36,12 +36,22 @@ def clean_answer(answer: str) -> str:
 def retrieve_context(
 	question: str,
 	number_of_results: int = 4,
+	source: str | None = None,
+	search_mode: str = "semantic",
+	rerank: bool = True,
 ) -> list[dict]:
 	"""Retrieve the document chunks most relevant to a question."""
-	return search_documents(
+	where = {"source": source} if source else None
+	results = search_documents(
 		question=question,
 		number_of_results=number_of_results,
+		where=where,
+		search_mode=search_mode,
 	)
+	if rerank and results:
+		from app.vector_store import rerank_documents
+		return rerank_documents(question, results, number_of_results)
+	return results
 
 
 def build_prompt(question: str, documents: list[dict]) -> str:
@@ -70,12 +80,21 @@ def ask_question(
 	provider: str | None = None,
 	model_name: str | None = None,
 	documents: list[dict] | None = None,
+	source: str | None = None,
+	search_mode: str = "semantic",
+	rerank: bool = True,
 ) -> str:
 	"""Retrieve relevant chunks and return an answer from Grok."""
 	if not question.strip():
 		raise ValueError("Question cannot be empty")
 
-	retrieved_documents = documents or retrieve_context(question, number_of_results)
+	retrieved_documents = documents or retrieve_context(
+		question,
+		number_of_results=number_of_results,
+		source=source,
+		search_mode=search_mode,
+		rerank=rerank,
+	)
 	prompt = build_prompt(question, retrieved_documents)
 
 	client, selected_model_name = get_llm_client(provider, model_name)

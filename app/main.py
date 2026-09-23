@@ -10,7 +10,10 @@ from app.config import (
 	GROQ_MODEL_NAME,
 	LLM_PROVIDER,
 	MAX_DOCUMENTS,
+	MAX_SEARCH_RESULTS,
 	MAX_UPLOAD_SIZE_MB,
+	SEARCH_MODES,
+	SEARCH_RESULTS_LIMIT,
 	XAI_MODEL_NAME,
 )
 from app.loaders import CHUNKING_STRATEGIES, load_documents
@@ -19,6 +22,7 @@ from app.vector_store import (
 	add_documents,
 	delete_documents_by_source,
 	document_count,
+	get_search_queries,
 	list_indexed_document_hashes,
 	list_indexed_sources,
 )
@@ -273,10 +277,47 @@ def render_chunking_section() -> tuple[int, int, str]:
 	)
 
 
+def render_search_section() -> tuple[int, str | None, str, bool]:
+	st.sidebar.header("Search")
+	search_limit = st.sidebar.number_input(
+		"Results to return",
+		min_value=1,
+		max_value=MAX_SEARCH_RESULTS,
+		value=SEARCH_RESULTS_LIMIT,
+		step=1,
+	)
+	search_mode_label = st.sidebar.selectbox(
+		"Search mode",
+		list(SEARCH_MODES),
+		index=0,
+		help="Semantic uses embedding similarity; Keyword matches shared terms; Hybrid combines both.",
+	)
+	rerank_enabled = st.sidebar.checkbox(
+		"Apply reranking after search",
+		value=True,
+		help="Reorder results by semantic closeness and keyword overlap before answering.",
+	)
+	sources = list_indexed_sources()
+	source_filter = st.sidebar.selectbox(
+		"Limit to source",
+		["All sources", *sources],
+		index=0,
+	)
+	selected_source = None if source_filter == "All sources" else source_filter
+	return int(search_limit), selected_source, SEARCH_MODES[search_mode_label], rerank_enabled
+
+
 def render_question_section(provider: str, model_name: str) -> None:
 	st.header("2. Ask a question")
 	st.caption(f"Stored chunks: {document_count()}")
 	question = st.text_input("Question", placeholder="What do the documents say?")
+	search_limit, source_filter, search_mode, rerank_enabled = render_search_section()
+
+	if search_mode in {"multi_query", "hyde"} and question.strip():
+		queries = get_search_queries(question, search_mode)
+		with st.expander("Generated search queries", expanded=False):
+			for query in queries:
+				st.write(f"• {query}")
 
 	if st.button("Ask", disabled=not question.strip()):
 		if document_count() == 0:
@@ -285,12 +326,22 @@ def render_question_section(provider: str, model_name: str) -> None:
 
 		try:
 			with st.spinner("Searching documents and generating an answer..."):
-				relevant_documents = retrieve_context(question)
+				relevant_documents = retrieve_context(
+					question,
+					number_of_results=search_limit,
+					source=source_filter,
+					search_mode=search_mode,
+					rerank=rerank_enabled,
+				)
 				answer = ask_question(
 					question,
+					number_of_results=search_limit,
 					provider=provider,
 					model_name=model_name,
 					documents=relevant_documents,
+					source=source_filter,
+					search_mode=search_mode,
+					rerank=rerank_enabled,
 				)
 			st.subheader("Answer")
 			st.caption(f"Generated with {provider} / {model_name}")

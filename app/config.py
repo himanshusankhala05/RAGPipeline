@@ -24,6 +24,16 @@ MAX_DOCUMENTS = 5
 MAX_UPLOAD_SIZE_MB = 50
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 150
+SEARCH_RESULTS_LIMIT = 4
+MAX_SEARCH_RESULTS = 10
+SEARCH_MODES = {
+	"Semantic": "semantic",
+	"Keyword": "keyword",
+	"Hybrid": "hybrid",
+	"Multi-query": "multi_query",
+	"HyDE": "hyde",
+}
+SEARCH_RERANK_DEFAULT = True
 
 # xAI settings. Keep the real key in .env, never in source code.
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "xai")

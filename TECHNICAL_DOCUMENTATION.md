@@ -320,15 +320,4 @@ Live embedding and provider API tests require network access and valid API crede
     failures without exposing raw provider or file error details.
 - Document updates currently require deleting and re-indexing the document.
 
-## 16. Recommended Future Improvements
 
-1. Add file-size validation.
-2. Add OCR support for scanned PDFs and images.
-3. Add per-user collections or a server-side database for document ownership.
-4. Add persistent document records instead of relying only on Chroma metadata.
-5. Add retry and timeout handling for provider requests.
-6. Add structured logging without secrets or document contents.
-7. Add integration tests using mocked Chroma and LLM clients.
-8. Cache the embedding function and Chroma collection for better Streamlit performance.
-9. Add document update and bulk-delete operations.
-10. Pin and regularly review dependency versions for production deployments.
